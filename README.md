@@ -92,6 +92,7 @@ This file contains two classes:
 ## Requirements
 
 - [BepInEx](https://github.com/BepInEx/BepInEx) for Risk of Rain 2
+- [HookGenPatcher](https://github.com/risk-of-thunder/Bepinex.Monomod.HookGenPatcher) for Risk of Rain 2
 - Risk of Rain 2 (uses `RoR2`, `RoR2.UI`, and IL2CPP hook interop via `On.*`)
 - TextMeshPro (bundled with the game)
 
