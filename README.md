@@ -1,6 +1,6 @@
 # Risky Stats
 
-A BepInEx plugin for **Risk of Rain 2** that adds a live, customizable combat stats HUD overlay - attack speed, armor, crit chance, healing, damage, streaks, damage taken, and movement speed - plus an in-game settings panel accessible from the pause menu.
+A BepInEx plugin for **Risk of Rain 2** that adds a live, customizable combat stats HUD overlay - attack speed, armor, crit chance, healing, damage, streaks, damage taken, and movement speed - plus an in-game settings panel accessible from the pause menu, and a hold-to-view run progress panel showing your totals for the run so far.
 
 ---
 
@@ -17,10 +17,16 @@ A BepInEx plugin for **Risk of Rain 2** that adds a live, customizable combat st
   - Damage Taken Streak (rolling total)
   - Movement Speed
 - **Toggle key** (default `V`) to show/hide the panel instantly.
+- **Run progress panel** (default hold `B`) showing your cumulative totals for the whole run so far, not per stage:
+  - Total Damage
+  - Total Damage Taken
+  - Total Healing
+  - Maximum Speed Achieved
+  - Biggest Single Hit (colored red if it was a crit)
 - **In-game settings panel**, added as a button in the pause menu, letting you:
   - Show/hide each stat individually
-  - Adjust text size (14–48)
-  - Adjust spacing between stats (5–100)
+  - Adjust text size (14-48)
+  - Adjust spacing between stats (5-100)
   - Switch panel layout between **Horizontal** and **Vertical**
   - When Vertical is selected, choose **Text Align** (Center or Left)
   - **Reset to Default** - restores all settings in one click
@@ -33,26 +39,28 @@ A BepInEx plugin for **Risk of Rain 2** that adds a live, customizable combat st
 | Action | Default |
 |---|---|
 | Show/hide stats panel | `V` |
+| Hold to view run progress | `B` |
 | Open settings | Pause menu → **Risky Stats** button |
 
-The toggle key is configurable via BepInEx's config file (`General → Toggle Key`).
+Both the stats toggle key and the progress hold key are configurable via BepInEx's config file (`General → Toggle Key` and `General → Progress Toggle Key`).
 
 ---
 
 ## How It Works
 
-The mod is split into two main files:
+The mod is split into three main files:
 
 ### `RiskyStatsPlugin.cs` - The HUD Overlay
 
 This is the core `BaseUnityPlugin`. On load it:
 
 1. Initializes settings (`RSSettings.Init`) and adds the settings-menu component (`RSSettingsUI`).
-2. Hooks into game events to track stats in real time:
+2. Initializes progress settings (`ProgressSettings.Init`) and adds the run progress component (`RunProgressUI`).
+3. Hooks into game events to track stats in real time:
    - `GlobalEventManager.onServerDamageDealt` → tracks damage dealt by the local player and their crit status.
    - `HealthComponent.TakeDamage` (IL2CPP hook via `On.RoR2...`) → tracks damage taken.
    - `HealthComponent.Heal` → tracks healing received.
-3. Every frame (`Update`):
+4. Every frame (`Update`):
    - Checks for the toggle key press.
    - Waits for the `HUD` object to exist, then builds the stats panel once.
    - If the panel is visible, refreshes all stat text.
@@ -62,7 +70,7 @@ This is the core `BaseUnityPlugin`. On load it:
 Because rebuilding the whole UI is expensive, `RefreshUI()` only calls a full `BuildUI()` when the **layout direction** actually changes (Horizontal ↔ Vertical). Simple changes like spacing, font size, visibility, or text alignment are applied in-place via `ApplySettings()`, which just updates existing text/layout components rather than recreating objects.
 
 **Stat tracking specifics:**
-- Damage, Damage Taken, and Healing streaks reset automatically if no matching event has fired in the last 3–5 seconds, so the numbers reflect "current burst" rather than a lifetime total.
+- Damage, Damage Taken, and Healing streaks reset automatically if no matching event has fired in the last 3-5 seconds, so the numbers reflect "current burst" rather than a lifetime total.
 - Numbers are formatted with `FormatNumber()` into human-readable suffixes (`1.2k`, `3.4m`, etc.) once they cross 1,000.
 - `Armor` reads directly from `CharacterBody.armor`, which is RoR2's own final computed value - it includes not just a character's base armor, but also armor granted by items (Ceramic Plate, Bison Steak, etc.) and temporary buffs like spawn protection. This is expected and accurate; it's not limited to a survivor's base armor stat from the wiki.
 
@@ -87,6 +95,25 @@ This file contains two classes:
   - A bottom row with **Reset to Default** and **Close** buttons (`CreateBottomButtonsRow`)
 - Whenever a setting that changes the *shape* of the panel is clicked (alignment, reset), the panel destroys and rebuilds itself from scratch so all rows reflect the new state correctly. Simple value changes (toggles, sliders, text align) update in place without a rebuild.
 
+### `Progress.cs` - Run Progress Panel
+
+This file contains three pieces:
+
+**`ProgressSettings`** (static) - binds the `Progress Toggle Key` config entry (default `B`), same pattern as the main toggle key.
+
+**`RunProgressStats`** (static) - tracks cumulative totals for the entire run, independent of the HUD overlay's rolling streaks:
+- Hooks its own copies of `GlobalEventManager.onServerDamageDealt`, `HealthComponent.TakeDamage`, and `HealthComponent.Heal` to add up Total Damage, Total Damage Taken, and Total Healing without resetting.
+- Tracks the single biggest hit dealt (`BiggestHit`) and whether that specific hit was a crit (`BiggestHitCrit`).
+- Polls `CharacterMotor.velocity` each frame to keep a running `MaxSpeed` for the run.
+- Resets all totals via `Run.onRunStartGlobal`, so stats are scoped to the current run, not any single stage.
+- Shares the same `FormatNumber()` k/m/b/t formatting as the main HUD panel for consistency.
+
+**`RunProgressUI`** (`MonoBehaviour`) - builds and manages the popup panel, styled with the same yellow/blue theme as the settings panel:
+- The panel is created once under the `HUD` and hidden by default.
+- Every frame, checks whether the progress key is being held (`GetKey`, not `GetKeyDown`) - the panel shows while held and hides the instant it's released.
+- While visible, refreshes all five stat rows each frame so numbers stay current mid-run.
+- Damage is white, Damage Taken is dark red, Healing is green, Max Speed is cyan, and Biggest Hit switches between white and red depending on whether that hit crit - matching the color choices used in the main HUD panel.
+
 ---
 
 ## Requirements
@@ -105,7 +132,7 @@ This file contains two classes:
 
 Settings are stored in BepInEx's standard config location (`BepInEx/config/com.shadowblade.riskystats.cfg`) under these sections:
 
-- `General` - Toggle Key
+- `General` - Toggle Key, Progress Toggle Key
 - `Appearance` - Font Size, Spacing, Alignment, Text Alignment
 - `Stats Visibility` - one entry per stat
 

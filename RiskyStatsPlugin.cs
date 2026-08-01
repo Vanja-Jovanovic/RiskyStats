@@ -42,6 +42,9 @@ namespace RiskyStats
             RSSettings.Init(Config);
             gameObject.AddComponent<RSSettingsUI>();
 
+            ProgressSettings.Init(Config);
+            gameObject.AddComponent<RunProgressUI>();
+
             GlobalEventManager.onServerDamageDealt += DamageDealt;
             On.RoR2.HealthComponent.TakeDamage += DamageTaken;
             On.RoR2.HealthComponent.Heal += Healing;
