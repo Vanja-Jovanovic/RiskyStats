@@ -8,9 +8,11 @@ using System.Collections.Generic;
 
 namespace RiskyStats
 {
-    [BepInPlugin("com.shadowblade.riskystats", "Risky Stats", "1.0.0")]
+    [BepInPlugin("com.shadowblade.riskystats", "Risky Stats", "1.1.1")]
     public class RiskyStatsPlugin : BaseUnityPlugin
     {
+        private const string CurrentConfigVersion = "1.1.1";
+
         private GameObject statsObject;
         private HorizontalOrVerticalLayoutGroup mainLayoutGroup;
         private GameObject armorCritContainer;
@@ -39,6 +41,9 @@ namespace RiskyStats
         private void Awake()
         {
             Logger.LogInfo("Risky Stats loaded!");
+
+            MigrateConfigIfNeeded();
+
             RSSettings.Init(Config);
             gameObject.AddComponent<RSSettingsUI>();
 
@@ -50,6 +55,37 @@ namespace RiskyStats
             On.RoR2.HealthComponent.Heal += Healing;
 
             RSSettings.OnSettingsChanged += RefreshUI;
+        }
+
+        private void MigrateConfigIfNeeded()
+        {
+            BepInEx.Configuration.ConfigEntry<string> configVersion = Config.Bind(
+                "Internal",
+                "Config Version",
+                "0.0.0",
+                "Do not edit. Used internally to migrate settings between updates."
+            );
+
+            if (configVersion.Value == CurrentConfigVersion)
+                return;
+
+            Logger.LogInfo($"[RiskyStats] Migrating config from {configVersion.Value} to {CurrentConfigVersion}.");
+            BepInEx.Configuration.ConfigEntry<KeyCode> toggleKeyEntry = Config.Bind(
+                "General", "Toggle Key", KeyCode.V, "Key used to show/hide the stats panel");
+            BepInEx.Configuration.ConfigEntry<KeyCode> progressKeyEntry = Config.Bind(
+                "General", "Progress Toggle Key", KeyCode.B, "Key to hold to show the run progress panel");
+
+            if (toggleKeyEntry.Value == KeyCode.None)
+                toggleKeyEntry.Value = KeyCode.V;
+
+            if (progressKeyEntry.Value == KeyCode.None)
+                progressKeyEntry.Value = KeyCode.B;
+
+            configVersion.Value = CurrentConfigVersion;
+
+            Config.Save();
+
+            Logger.LogInfo("[RiskyStats] Config migration complete.");
         }
 
         private void OnDestroy()
