@@ -11,7 +11,7 @@ namespace RiskyStats
     [BepInPlugin("com.shadowblade.riskystats", "Risky Stats", "1.1.1")]
     public class RiskyStatsPlugin : BaseUnityPlugin
     {
-        private const string CurrentConfigVersion = "1.1.1";
+        private const string CurrentConfigVersion = "1.1.2";
 
         private GameObject statsObject;
         private HorizontalOrVerticalLayoutGroup mainLayoutGroup;

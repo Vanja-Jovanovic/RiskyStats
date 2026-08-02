@@ -34,6 +34,10 @@ namespace RiskyStats
         public static float BiggestHit;
         public static bool BiggestHitCrit;
 
+        public static int ChestsOpened;
+        public static float GoldCollected;
+        public static int DronesUsed;
+
         private static bool hooked;
 
         public static void Init()
@@ -45,6 +49,9 @@ namespace RiskyStats
             On.RoR2.HealthComponent.TakeDamage += OnDamageTaken;
             On.RoR2.HealthComponent.Heal += OnHealing;
             Run.onRunStartGlobal += OnRunStart;
+
+            On.RoR2.CharacterMaster.GiveMoney += OnGiveMoney;
+            On.RoR2.PurchaseInteraction.OnInteractionBegin += OnPurchaseInteractionBegin;
         }
 
         private static void OnRunStart(Run run)
@@ -60,6 +67,22 @@ namespace RiskyStats
             MaxSpeed = 0f;
             BiggestHit = 0f;
             BiggestHitCrit = false;
+
+            ChestsOpened = 0;
+            GoldCollected = 0f;
+            DronesUsed = 0;
+        }
+
+        private static bool IsLocalPlayerBody(CharacterBody body)
+        {
+            CharacterBody player = LocalUserManager.GetFirstLocalUser()?.cachedBody;
+            return player != null && body == player;
+        }
+
+        private static bool IsLocalPlayerMaster(CharacterMaster master)
+        {
+            CharacterBody player = LocalUserManager.GetFirstLocalUser()?.cachedBody;
+            return player != null && master != null && master == player.master;
         }
 
         private static void OnDamageDealt(DamageReport report)
@@ -97,6 +120,39 @@ namespace RiskyStats
             return result;
         }
 
+        private static void OnGiveMoney(On.RoR2.CharacterMaster.orig_GiveMoney orig, CharacterMaster self, uint amount)
+        {
+            orig(self, amount);
+
+            if (IsLocalPlayerMaster(self))
+                GoldCollected += amount;
+        }
+
+        private static void OnPurchaseInteractionBegin(On.RoR2.PurchaseInteraction.orig_OnInteractionBegin orig, PurchaseInteraction self, Interactor activator)
+        {
+            bool wasAvailable = self.available;
+
+            orig(self, activator);
+
+            if (activator == null) return;
+            if (!wasAvailable) return;
+
+            CharacterBody activatorBody = activator.GetComponent<CharacterBody>();
+            if (!IsLocalPlayerBody(activatorBody)) return;
+
+            if (self.GetComponent<ChestBehavior>() != null)
+            {
+                ChestsOpened++;
+                return;
+            }
+
+            SummonMasterBehavior summonBehavior = self.GetComponent<SummonMasterBehavior>();
+            if (summonBehavior == null) return;
+
+            if (self.gameObject.name.IndexOf("Drone", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                DronesUsed++;
+        }
+
         public static void TrackSpeed(CharacterBody body)
         {
             if (body == null || body.characterMotor == null) return;
@@ -125,6 +181,9 @@ namespace RiskyStats
         private TextMeshProUGUI healingText;
         private TextMeshProUGUI maxSpeedText;
         private TextMeshProUGUI biggestHitText;
+        private TextMeshProUGUI chestsOpenedText;
+        private TextMeshProUGUI goldCollectedText;
+        private TextMeshProUGUI dronesUsedText;
 
         private static readonly Color BackgroundColor = new Color(0.05f, 0.07f, 0.18f, 0.97f);
         private static readonly Color BorderColor = new Color(1f, 0.82f, 0.2f, 1f);
@@ -202,6 +261,9 @@ namespace RiskyStats
             healingText = CreateStatRow(panelObject.transform, "Total Healing", false);
             maxSpeedText = CreateStatRow(panelObject.transform, "Max Speed Achieved", true);
             biggestHitText = CreateStatRow(panelObject.transform, "Biggest Hit", false);
+            chestsOpenedText = CreateStatRow(panelObject.transform, "Chests Opened", true);
+            goldCollectedText = CreateStatRow(panelObject.transform, "Gold Collected", false);
+            dronesUsedText = CreateStatRow(panelObject.transform, "Drones Used", true);
 
             panelObject.SetActive(false);
         }
@@ -299,6 +361,10 @@ namespace RiskyStats
 
             string hitColor = RunProgressStats.BiggestHitCrit ? "FF0000" : "FFFFFF";
             biggestHitText.text = $"<color=#{hitColor}>{RunProgressStats.FormatNumber(RunProgressStats.BiggestHit)}</color>";
+
+            chestsOpenedText.text = $"<color=#4A90E2>{RunProgressStats.ChestsOpened}</color>";
+            goldCollectedText.text = $"<color=#FFD700>{RunProgressStats.FormatNumber(RunProgressStats.GoldCollected)}</color>";
+            dronesUsedText.text = $"<color=#006400>{RunProgressStats.DronesUsed}</color>";
         }
     }
 }
