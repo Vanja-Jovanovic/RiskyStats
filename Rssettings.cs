@@ -170,6 +170,104 @@ namespace RiskyStats
             if (textAlignEntry != null)
                 textAlignEntry.Value = StatTextAlign.Center;
 
+            RSPlusSettings.ResetToDefault();
+
+            OnSettingsChanged?.Invoke();
+        }
+    }
+
+    public static class RSPlusSettings
+    {
+        public static event Action OnSettingsChanged;
+
+        public static Dictionary<string, bool> StatVisibility = new Dictionary<string, bool>
+        {
+            { "Jumps", false },
+            { "MountainShrines", false },
+            { "Drones", false },
+            { "Luck", false },
+            { "Kills", false }
+        };
+
+        public static float StatFontSize = 27f;
+        public static float StatSpacing = 40f;
+
+        private static ConfigFile config;
+        private static Dictionary<string, ConfigEntry<bool>> visibilityEntries = new Dictionary<string, ConfigEntry<bool>>();
+        private static ConfigEntry<float> fontSizeEntry;
+        private static ConfigEntry<float> spacingEntry;
+
+        public static void Init(ConfigFile cfg)
+        {
+            config = cfg;
+
+            foreach (string key in new List<string>(StatVisibility.Keys))
+            {
+                ConfigEntry<bool> entry = config.Bind(
+                    "Plus Stats Visibility",
+                    key,
+                    false,
+                    "Show or hide the " + key + " stat (Risky Stats+)"
+                );
+
+                visibilityEntries[key] = entry;
+                StatVisibility[key] = entry.Value;
+            }
+
+            fontSizeEntry = config.Bind("Plus Appearance", "Font Size", 27f, "Text size of each Risky Stats+ stat");
+            spacingEntry = config.Bind("Plus Appearance", "Spacing", 40f, "Spacing between Risky Stats+ stats");
+
+            StatFontSize = fontSizeEntry.Value;
+            StatSpacing = spacingEntry.Value;
+        }
+
+        public static void SetVisibility(string key, bool value)
+        {
+            StatVisibility[key] = value;
+
+            if (visibilityEntries.ContainsKey(key))
+                visibilityEntries[key].Value = value;
+
+            OnSettingsChanged?.Invoke();
+        }
+
+        public static void SetFontSize(float value)
+        {
+            StatFontSize = value;
+
+            if (fontSizeEntry != null)
+                fontSizeEntry.Value = value;
+
+            OnSettingsChanged?.Invoke();
+        }
+
+        public static void SetSpacing(float value)
+        {
+            StatSpacing = value;
+
+            if (spacingEntry != null)
+                spacingEntry.Value = value;
+
+            OnSettingsChanged?.Invoke();
+        }
+
+        public static void ResetToDefault()
+        {
+            foreach (string key in new List<string>(StatVisibility.Keys))
+            {
+                StatVisibility[key] = false;
+                if (visibilityEntries.ContainsKey(key))
+                    visibilityEntries[key].Value = false;
+            }
+
+            StatFontSize = 27f;
+            if (fontSizeEntry != null)
+                fontSizeEntry.Value = 27f;
+
+            StatSpacing = 40f;
+            if (spacingEntry != null)
+                spacingEntry.Value = 40f;
+
             OnSettingsChanged?.Invoke();
         }
     }
@@ -177,6 +275,10 @@ namespace RiskyStats
     public class RSSettingsUI : MonoBehaviour
     {
         private static GameObject panelObject;
+        private static GameObject plusPanelObject;
+        private static GameObject navButtonObject;
+        private static GameObject backdropObject;
+        private static Transform rootCanvasTransform;
 
         private static readonly Color BackgroundColor = new Color(0.05f, 0.07f, 0.18f, 0.97f);
         private static readonly Color BorderColor = new Color(1f, 0.82f, 0.2f, 1f);
@@ -187,7 +289,7 @@ namespace RiskyStats
         private static readonly Color DarkTextColor = new Color(0.05f, 0.07f, 0.18f, 1f);
         private static readonly Color SubTextColor = new Color(0.65f, 0.68f, 0.8f, 1f);
 
-        private const float PanelWidth = 480f;
+        private const float PanelWidth = 560f;
         private const float RowHeight = 32f;
         private const float RowSpacing = 6f;
 
@@ -208,6 +310,20 @@ namespace RiskyStats
             { "DamageTaken", "Damage Taken" },
             { "DamageTakenStreak", "Damage Taken Streak" },
             { "Speed", "Speed" }
+        };
+
+        private static readonly string[] PlusStatOrder = new string[]
+        {
+            "Jumps", "MountainShrines", "Drones", "Luck", "Kills"
+        };
+
+        private static readonly Dictionary<string, string> PlusStatLabels = new Dictionary<string, string>
+        {
+            { "Jumps", "Jumps" },
+            { "MountainShrines", "Mountain Shrines" },
+            { "Drones", "Drones" },
+            { "Luck", "Luck" },
+            { "Kills", "Kills" }
         };
 
         private void Awake()
@@ -309,13 +425,119 @@ namespace RiskyStats
 
         private static void TogglePanel(Transform canvasTransform)
         {
+            rootCanvasTransform = canvasTransform;
+
             if (panelObject == null)
             {
+                BuildBackdrop(canvasTransform);
                 BuildPanel(canvasTransform);
+                BuildNavButton(canvasTransform);
                 return;
             }
 
-            panelObject.SetActive(!panelObject.activeSelf);
+            bool opening = !panelObject.activeSelf && (plusPanelObject == null || !plusPanelObject.activeSelf);
+
+            if (opening)
+            {
+                if (backdropObject != null)
+                    backdropObject.SetActive(true);
+                panelObject.SetActive(true);
+                if (plusPanelObject != null)
+                    plusPanelObject.SetActive(false);
+                if (navButtonObject != null)
+                    navButtonObject.SetActive(true);
+                UpdateNavButtonLabel();
+            }
+            else
+            {
+                if (backdropObject != null)
+                    backdropObject.SetActive(false);
+                panelObject.SetActive(false);
+                if (plusPanelObject != null)
+                    plusPanelObject.SetActive(false);
+                if (navButtonObject != null)
+                    navButtonObject.SetActive(false);
+            }
+        }
+
+        private static void BuildBackdrop(Transform parent)
+        {
+            backdropObject = new GameObject("RiskyStatsBackdrop");
+            backdropObject.transform.SetParent(parent, false);
+
+            RectTransform rect = backdropObject.AddComponent<RectTransform>();
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+
+            Image img = backdropObject.AddComponent<Image>();
+            img.color = new Color(0f, 0f, 0f, 0.75f);
+            img.raycastTarget = true;
+        }
+
+        private static void BuildNavButton(Transform parent)
+        {
+            navButtonObject = new GameObject("RiskyStatsNavButton");
+            navButtonObject.transform.SetParent(parent, false);
+
+            RectTransform rect = navButtonObject.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(1f, 0f);
+            rect.anchorMax = new Vector2(1f, 0f);
+            rect.pivot = new Vector2(1f, 0f);
+            rect.anchoredPosition = new Vector2(-40f, 40f);
+            rect.sizeDelta = new Vector2(140f, 36f);
+
+            Image bg = navButtonObject.AddComponent<Image>();
+            bg.color = AccentColor;
+
+            Button button = navButtonObject.AddComponent<Button>();
+            button.targetGraphic = bg;
+
+            GameObject labelObj = new GameObject("Label");
+            labelObj.transform.SetParent(navButtonObject.transform, false);
+            RectTransform labelRect = labelObj.AddComponent<RectTransform>();
+            labelRect.anchorMin = Vector2.zero;
+            labelRect.anchorMax = Vector2.one;
+            labelRect.offsetMin = Vector2.zero;
+            labelRect.offsetMax = Vector2.zero;
+
+            TextMeshProUGUI label = labelObj.AddComponent<TextMeshProUGUI>();
+            label.text = "Next";
+            label.alignment = TextAlignmentOptions.Center;
+            label.color = DarkTextColor;
+            label.fontStyle = FontStyles.Bold;
+            label.fontSize = 16;
+
+            button.onClick.AddListener(() =>
+            {
+                NavigateToggle();
+                EventSystem.current.SetSelectedGameObject(null);
+            });
+        }
+
+        private static void NavigateToggle()
+        {
+            if (plusPanelObject == null)
+                BuildPlusPanel(rootCanvasTransform);
+
+            bool goingToPlus = panelObject.activeSelf;
+
+            panelObject.SetActive(!goingToPlus);
+            plusPanelObject.SetActive(goingToPlus);
+
+            UpdateNavButtonLabel();
+        }
+
+        private static void UpdateNavButtonLabel()
+        {
+            if (navButtonObject == null) return;
+
+            TextMeshProUGUI label = navButtonObject.GetComponentInChildren<TextMeshProUGUI>();
+            if (label == null) return;
+
+            bool onPlusPanel = plusPanelObject != null && plusPanelObject.activeSelf;
+            label.text = onPlusPanel ? "Back" : "Next";
         }
 
         private static void BuildPanel(Transform parent)
@@ -350,13 +572,15 @@ namespace RiskyStats
             fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-            CreateTitle(panelObject.transform);
+            CreateTitle(panelObject.transform, "RISKY STATS SETTINGS");
             CreateDivider(panelObject.transform);
 
             bool alt = false;
             foreach (string key in StatOrder)
             {
-                CreateToggleRow(panelObject.transform, key, StatLabels[key], alt);
+                bool startValue = RSSettings.StatVisibility.ContainsKey(key) && RSSettings.StatVisibility[key];
+                CreateToggleRow(panelObject.transform, key, StatLabels[key], alt, startValue,
+                    value => RSSettings.SetVisibility(key, value));
                 alt = !alt;
             }
 
@@ -373,13 +597,74 @@ namespace RiskyStats
             CreateBottomButtonsRow(panelObject.transform);
         }
 
-        private static void CreateTitle(Transform parent)
+        private static void BuildPlusPanel(Transform parent)
+        {
+            plusPanelObject = new GameObject("RiskyStatsPlusSettingsPanel");
+            plusPanelObject.transform.SetParent(parent, false);
+
+            RectTransform panelRect = plusPanelObject.AddComponent<RectTransform>();
+            panelRect.anchorMin = new Vector2(0.5f, 0.5f);
+            panelRect.anchorMax = new Vector2(0.5f, 0.5f);
+            panelRect.pivot = new Vector2(0.5f, 0.5f);
+            panelRect.anchoredPosition = Vector2.zero;
+            panelRect.sizeDelta = new Vector2(PanelWidth, 100);
+
+            Image bg = plusPanelObject.AddComponent<Image>();
+            bg.color = BackgroundColor;
+
+            Outline outline = plusPanelObject.AddComponent<Outline>();
+            outline.effectColor = BorderColor;
+            outline.effectDistance = new Vector2(2, -2);
+
+            VerticalLayoutGroup rootLayout = plusPanelObject.AddComponent<VerticalLayoutGroup>();
+            rootLayout.padding = new RectOffset(18, 18, 18, 18);
+            rootLayout.spacing = RowSpacing;
+            rootLayout.childAlignment = TextAnchor.UpperCenter;
+            rootLayout.childControlWidth = true;
+            rootLayout.childControlHeight = true;
+            rootLayout.childForceExpandWidth = false;
+            rootLayout.childForceExpandHeight = false;
+
+            ContentSizeFitter fitter = plusPanelObject.AddComponent<ContentSizeFitter>();
+            fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            CreateTitle(plusPanelObject.transform, "RISKY STATS+ SETTINGS");
+            CreateDivider(plusPanelObject.transform);
+
+            bool alt = false;
+            foreach (string key in PlusStatOrder)
+            {
+                bool startValue = RSPlusSettings.StatVisibility.ContainsKey(key) && RSPlusSettings.StatVisibility[key];
+                CreateToggleRow(plusPanelObject.transform, key, PlusStatLabels[key], alt, startValue,
+                    value => RSPlusSettings.SetVisibility(key, value));
+                alt = !alt;
+            }
+
+            CreateDivider(plusPanelObject.transform);
+
+            CreateSliderRow(plusPanelObject.transform, "Size", 14f, 48f, RSPlusSettings.StatFontSize, RSPlusSettings.SetFontSize);
+            CreateSliderRow(plusPanelObject.transform, "Spacing", 5f, 100f, RSPlusSettings.StatSpacing, RSPlusSettings.SetSpacing);
+
+            GameObject bottomSpacer = new GameObject("BottomSpacer");
+            bottomSpacer.transform.SetParent(plusPanelObject.transform, false);
+            LayoutElement bottomSpacerLE = bottomSpacer.AddComponent<LayoutElement>();
+            bottomSpacerLE.minHeight = 70;
+            bottomSpacerLE.preferredHeight = 70;
+            bottomSpacerLE.flexibleWidth = 1;
+
+            CreatePlusBottomButtonsRow(plusPanelObject.transform);
+
+            plusPanelObject.SetActive(false);
+        }
+
+        private static void CreateTitle(Transform parent, string titleText)
         {
             GameObject titleObj = new GameObject("Title");
             titleObj.transform.SetParent(parent, false);
 
             TextMeshProUGUI title = titleObj.AddComponent<TextMeshProUGUI>();
-            title.text = "RISKY STATS SETTINGS";
+            title.text = titleText;
             title.fontSize = 24;
             title.color = AccentColor;
             title.alignment = TextAlignmentOptions.Center;
@@ -405,7 +690,7 @@ namespace RiskyStats
             le.flexibleWidth = 1;
         }
 
-        private static void CreateToggleRow(Transform parent, string key, string labelText, bool alt)
+        private static void CreateToggleRow(Transform parent, string key, string labelText, bool alt, bool startValue, Action<bool> onChanged)
         {
             GameObject row = new GameObject("Row_" + key);
             row.transform.SetParent(parent, false);
@@ -452,8 +737,6 @@ namespace RiskyStats
             toggleLayoutElement.flexibleWidth = 0;
 
             Image toggleBg = toggleObj.AddComponent<Image>();
-
-            bool startValue = RSSettings.StatVisibility.ContainsKey(key) ? RSSettings.StatVisibility[key] : true;
             toggleBg.color = startValue ? AccentColor : OffColor;
 
             Toggle toggle = toggleObj.AddComponent<Toggle>();
@@ -462,7 +745,7 @@ namespace RiskyStats
             toggle.onValueChanged.AddListener(value =>
             {
                 toggleBg.color = value ? AccentColor : OffColor;
-                RSSettings.SetVisibility(key, value);
+                onChanged(value);
             });
         }
 
@@ -752,11 +1035,65 @@ namespace RiskyStats
                 Transform panelParent = panelObject.transform.parent;
                 DestroyImmediate(panelObject);
                 BuildPanel(panelParent);
+
+                if (plusPanelObject != null)
+                {
+                    DestroyImmediate(plusPanelObject);
+                    plusPanelObject = null;
+                }
+
+                UpdateNavButtonLabel();
             });
 
             CreateBottomButton(wrapper.transform, "Close", AccentColor, DarkTextColor, () =>
             {
                 panelObject.SetActive(false);
+                if (navButtonObject != null)
+                    navButtonObject.SetActive(false);
+                if (backdropObject != null)
+                    backdropObject.SetActive(false);
+            });
+        }
+
+        private static void CreatePlusBottomButtonsRow(Transform parent)
+        {
+            GameObject wrapper = new GameObject("BottomButtonsWrapper");
+            wrapper.transform.SetParent(parent, false);
+
+            LayoutElement wrapperLayoutElement = wrapper.AddComponent<LayoutElement>();
+            wrapperLayoutElement.minHeight = 40;
+            wrapperLayoutElement.preferredHeight = 40;
+            wrapperLayoutElement.flexibleWidth = 1;
+
+            HorizontalLayoutGroup wrapperLayout = wrapper.AddComponent<HorizontalLayoutGroup>();
+            wrapperLayout.spacing = 12;
+            wrapperLayout.childAlignment = TextAnchor.MiddleCenter;
+            wrapperLayout.childControlWidth = true;
+            wrapperLayout.childControlHeight = true;
+            wrapperLayout.childForceExpandWidth = false;
+            wrapperLayout.childForceExpandHeight = false;
+
+            CreateBottomButton(wrapper.transform, "Reset to Default", ResetColor, Color.white, () =>
+            {
+                RSSettings.ResetToDefault();
+
+                Transform panelParent = panelObject.transform.parent;
+                DestroyImmediate(panelObject);
+                BuildPanel(panelParent);
+
+                DestroyImmediate(plusPanelObject);
+                plusPanelObject = null;
+
+                UpdateNavButtonLabel();
+            });
+
+            CreateBottomButton(wrapper.transform, "Close", AccentColor, DarkTextColor, () =>
+            {
+                plusPanelObject.SetActive(false);
+                if (navButtonObject != null)
+                    navButtonObject.SetActive(false);
+                if (backdropObject != null)
+                    backdropObject.SetActive(false);
             });
         }
 

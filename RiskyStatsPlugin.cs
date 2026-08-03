@@ -8,10 +8,10 @@ using System.Collections.Generic;
 
 namespace RiskyStats
 {
-    [BepInPlugin("com.shadowblade.riskystats", "Risky Stats", "1.1.1")]
+    [BepInPlugin("com.shadowblade.riskystats", "Risky Stats", "1.2.0")]
     public class RiskyStatsPlugin : BaseUnityPlugin
     {
-        private const string CurrentConfigVersion = "1.1.2";
+        private const string CurrentConfigVersion = "1.2.0";
 
         private GameObject statsObject;
         private HorizontalOrVerticalLayoutGroup mainLayoutGroup;
@@ -38,6 +38,24 @@ namespace RiskyStats
         private float lastTakenTime;
         private float lastHealingTime;
 
+        // ---------------- Risky Stats+ ----------------
+
+        private GameObject statsPlusObject;
+        private VerticalLayoutGroup plusLayoutGroup;
+
+        private readonly Dictionary<string, TextMeshProUGUI> plusStatTexts = new Dictionary<string, TextMeshProUGUI>();
+        private readonly Dictionary<string, GameObject> plusStatObjects = new Dictionary<string, GameObject>();
+
+        private readonly string[] plusStatKeys = new string[]
+        {
+            "Jumps", "MountainShrines", "Drones", "Luck", "Kills"
+        };
+
+        private int mountainShrinesActivated;
+        private int monstersKilled;
+
+        // ------------------------------------------------
+
         private void Awake()
         {
             Logger.LogInfo("Risky Stats loaded!");
@@ -47,6 +65,8 @@ namespace RiskyStats
             RSSettings.Init(Config);
             gameObject.AddComponent<RSSettingsUI>();
 
+            RSPlusSettings.Init(Config);
+
             ProgressSettings.Init(Config);
             gameObject.AddComponent<RunProgressUI>();
 
@@ -54,7 +74,12 @@ namespace RiskyStats
             On.RoR2.HealthComponent.TakeDamage += DamageTaken;
             On.RoR2.HealthComponent.Heal += Healing;
 
+            On.RoR2.PurchaseInteraction.OnInteractionBegin += ShrineActivated;
+            GlobalEventManager.onCharacterDeathGlobal += MonsterKilled;
+            Run.onRunStartGlobal += OnRunStart;
+
             RSSettings.OnSettingsChanged += RefreshUI;
+            RSPlusSettings.OnSettingsChanged += RefreshPlusUI;
         }
 
         private void MigrateConfigIfNeeded()
@@ -91,6 +116,11 @@ namespace RiskyStats
         private void OnDestroy()
         {
             RSSettings.OnSettingsChanged -= RefreshUI;
+            RSPlusSettings.OnSettingsChanged -= RefreshPlusUI;
+
+            On.RoR2.PurchaseInteraction.OnInteractionBegin -= ShrineActivated;
+            GlobalEventManager.onCharacterDeathGlobal -= MonsterKilled;
+            Run.onRunStartGlobal -= OnRunStart;
         }
 
         private void Update()
@@ -98,18 +128,30 @@ namespace RiskyStats
             if (BepInEx.UnityInput.Current.GetKeyDown(RSSettings.ToggleKey))
             {
                 if (statsObject != null)
-                    statsObject.SetActive(!statsObject.activeSelf);
+                {
+                    bool newState = !statsObject.activeSelf;
+                    statsObject.SetActive(newState);
+
+                    if (statsPlusObject != null)
+                        statsPlusObject.SetActive(newState);
+                }
             }
 
-            if (statsObject == null)
-            {
-                HUD hud = FindObjectOfType<HUD>();
-                if (hud != null)
-                    CreateUI(hud);
-            }
+            HUD hud = null;
+            if (statsObject == null || statsPlusObject == null)
+                hud = FindObjectOfType<HUD>();
+
+            if (statsObject == null && hud != null)
+                CreateUI(hud);
+
+            if (statsPlusObject == null && hud != null)
+                CreatePlusUI(hud);
 
             if (statsObject != null && statsObject.activeSelf)
                 UpdateStats();
+
+            if (statsPlusObject != null)
+                UpdatePlusStats();
         }
 
         private void CreateUI(HUD hud)
@@ -337,6 +379,175 @@ namespace RiskyStats
             if (key == "DamageTaken") return "Damage Taken";
             if (key == "DamageTakenStreak") return "Damage Taken Streak";
             return key;
+        }
+
+        // ---------------- Risky Stats+ ----------------
+
+        private void CreatePlusUI(HUD hud)
+        {
+            statsPlusObject = new GameObject("RiskyStatsPlusPanel");
+            statsPlusObject.transform.SetParent(hud.mainContainer.transform, false);
+
+            RectTransform rect = statsPlusObject.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(1, 0);
+            rect.anchorMax = new Vector2(1, 0);
+            rect.pivot = new Vector2(1, 0);
+
+            rect.anchoredPosition = new Vector2(-30, 230);
+            rect.sizeDelta = new Vector2(400, 130);
+
+            BuildPlusUI();
+            ApplyPlusSettings();
+
+            if (statsObject != null)
+                statsPlusObject.SetActive(statsObject.activeSelf);
+        }
+
+        private void BuildPlusUI()
+        {
+            if (plusLayoutGroup != null)
+            {
+                DestroyImmediate(plusLayoutGroup);
+                plusLayoutGroup = null;
+            }
+
+            List<Transform> existingChildren = new List<Transform>();
+            foreach (Transform child in statsPlusObject.transform)
+                existingChildren.Add(child);
+
+            foreach (Transform child in existingChildren)
+                DestroyImmediate(child.gameObject);
+
+            plusStatTexts.Clear();
+            plusStatObjects.Clear();
+
+            plusLayoutGroup = statsPlusObject.AddComponent<VerticalLayoutGroup>();
+            plusLayoutGroup.spacing = RSPlusSettings.StatSpacing;
+            plusLayoutGroup.childAlignment = TextAnchor.LowerRight;
+            plusLayoutGroup.childControlWidth = true;
+            plusLayoutGroup.childForceExpandWidth = false;
+            plusLayoutGroup.childControlHeight = true;
+            plusLayoutGroup.childForceExpandHeight = false;
+
+            foreach (string key in plusStatKeys)
+            {
+                TextMeshProUGUI text = CreateText(GetPlusStatLabel(key) + ": 0", statsPlusObject.transform);
+                text.alignment = TextAlignmentOptions.MidlineRight;
+                plusStatTexts[key] = text;
+                plusStatObjects[key] = text.gameObject;
+            }
+
+            ContentSizeFitter fitter = statsPlusObject.GetComponent<ContentSizeFitter>();
+            if (fitter == null)
+                fitter = statsPlusObject.AddComponent<ContentSizeFitter>();
+            fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        }
+
+        private void RefreshPlusUI()
+        {
+            if (statsPlusObject == null) return;
+
+            plusLayoutGroup.spacing = RSPlusSettings.StatSpacing;
+            ApplyPlusSettings();
+        }
+
+        private void ApplyPlusSettings()
+        {
+            foreach (var kv in plusStatTexts)
+                kv.Value.fontSize = RSPlusSettings.StatFontSize;
+
+            foreach (string key in plusStatKeys)
+            {
+                bool visible = RSPlusSettings.StatVisibility.ContainsKey(key) && RSPlusSettings.StatVisibility[key];
+                if (plusStatObjects.TryGetValue(key, out GameObject obj))
+                    obj.SetActive(visible);
+            }
+        }
+
+        private void UpdatePlusStats()
+        {
+            CharacterBody body = LocalUserManager.GetFirstLocalUser()?.cachedBody;
+            if (body == null) return;
+
+            if (plusStatObjects["Jumps"].activeSelf)
+            {
+                int usedJumps = body.characterMotor != null ? body.characterMotor.jumpCount : 0;
+                plusStatTexts["Jumps"].text = $"Jumps: <color=#90EE90>{body.maxJumpCount}/{usedJumps}</color>";
+            }
+
+            if (plusStatObjects["MountainShrines"].activeSelf)
+                plusStatTexts["MountainShrines"].text = $"Mountain Shrines: <color=#E0FFFF>{mountainShrinesActivated}</color>";
+
+            if (plusStatObjects["Drones"].activeSelf)
+                plusStatTexts["Drones"].text = $"Drones: <color=#00FF00>{CountAliveDrones(body)}</color>";
+
+            if (plusStatObjects["Luck"].activeSelf)
+            {
+                int luck = body.inventory != null ? body.inventory.GetItemCount(RoR2Content.Items.Clover) : 0;
+                plusStatTexts["Luck"].text = $"Luck: <color=#FF69B4>{luck}</color>";
+            }
+
+            if (plusStatObjects["Kills"].activeSelf)
+                plusStatTexts["Kills"].text = $"Kills: <color=#8B0000>{monstersKilled}</color>";
+        }
+
+        private int CountAliveDrones(CharacterBody player)
+        {
+            if (player == null || player.master == null) return 0;
+
+            int count = 0;
+            foreach (CharacterBody body in CharacterBody.readOnlyInstancesList)
+            {
+                if (body == null || body.master == null) continue;
+                if (body.master.minionOwnership == null) continue;
+                if (body.master.minionOwnership.ownerMaster != player.master) continue;
+                if (body.master.name.IndexOf("Drone", System.StringComparison.OrdinalIgnoreCase) < 0) continue;
+                if (body.healthComponent == null || !body.healthComponent.alive) continue;
+
+                count++;
+            }
+
+            return count;
+        }
+
+        private string GetPlusStatLabel(string key)
+        {
+            if (key == "MountainShrines") return "Mountain Shrines";
+            return key;
+        }
+
+        private void ShrineActivated(On.RoR2.PurchaseInteraction.orig_OnInteractionBegin orig, PurchaseInteraction self, Interactor activator)
+        {
+            bool wasAvailable = self.available;
+
+            orig(self, activator);
+
+            if (activator == null || !wasAvailable) return;
+
+            CharacterBody player = LocalUserManager.GetFirstLocalUser()?.cachedBody;
+            CharacterBody activatorBody = activator.GetComponent<CharacterBody>();
+            if (player == null || activatorBody != player) return;
+
+            if (self.GetComponent<ShrineBossBehavior>() != null)
+                mountainShrinesActivated++;
+        }
+
+        private void MonsterKilled(DamageReport report)
+        {
+            CharacterBody player = LocalUserManager.GetFirstLocalUser()?.cachedBody;
+            if (player == null || report.attackerBody != player) return;
+            if (report.victimBody == null) return;
+
+            TeamComponent victimTeam = report.victimBody.teamComponent;
+            if (victimTeam != null && victimTeam.teamIndex == TeamIndex.Monster)
+                monstersKilled++;
+        }
+
+        private void OnRunStart(Run run)
+        {
+            mountainShrinesActivated = 0;
+            monstersKilled = 0;
         }
     }
 }
