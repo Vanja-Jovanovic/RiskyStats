@@ -175,6 +175,7 @@ namespace RiskyStats
     public class RunProgressUI : MonoBehaviour
     {
         private GameObject panelObject;
+        private HUD cachedHud;
 
         private TextMeshProUGUI damageText;
         private TextMeshProUGUI damageTakenText;
@@ -196,6 +197,9 @@ namespace RiskyStats
         private const float RowHeight = 34f;
         private const float RowSpacing = 6f;
 
+        private float refreshTimer;
+        private const float RefreshInterval = 0.05f;
+
         private void Awake()
         {
             RunProgressStats.Init();
@@ -203,22 +207,36 @@ namespace RiskyStats
 
         private void Update()
         {
-            HUD hud = FindObjectOfType<HUD>();
-            if (hud == null) return;
-
-            CharacterBody body = LocalUserManager.GetFirstLocalUser()?.cachedBody;
-            RunProgressStats.TrackSpeed(body);
-
             if (panelObject == null)
-                CreatePanel(hud);
+            {
+                if (cachedHud == null)
+                    cachedHud = FindObjectOfType<HUD>();
+
+                if (cachedHud == null)
+                    return;
+
+                CreatePanel(cachedHud);
+            }
 
             bool held = BepInEx.UnityInput.Current.GetKey(ProgressSettings.ToggleKey);
 
             if (held != panelObject.activeSelf)
                 panelObject.SetActive(held);
 
+            CharacterBody body = held ? LocalUserManager.GetFirstLocalUser()?.cachedBody : null;
+
             if (held)
-                RefreshValues();
+                RunProgressStats.TrackSpeed(body);
+
+            if (held)
+            {
+                refreshTimer += Time.deltaTime;
+                if (refreshTimer >= RefreshInterval)
+                {
+                    refreshTimer = 0f;
+                    RefreshValues();
+                }
+            }
         }
 
         private void CreatePanel(HUD hud)
@@ -352,19 +370,25 @@ namespace RiskyStats
             return value;
         }
 
+        private static void SetTextIfChanged(TextMeshProUGUI text, string value)
+        {
+            if (text.text != value)
+                text.text = value;
+        }
+
         private void RefreshValues()
         {
-            damageText.text = $"<color=#FFFFFF>{RunProgressStats.FormatNumber(RunProgressStats.TotalDamage)}</color>";
-            damageTakenText.text = $"<color=#8B0000>{RunProgressStats.FormatNumber(RunProgressStats.TotalDamageTaken)}</color>";
-            healingText.text = $"<color=#90EE90>{RunProgressStats.FormatNumber(RunProgressStats.TotalHealing)}</color>";
-            maxSpeedText.text = $"<color=#00FFFF>{RunProgressStats.MaxSpeed:0.0} m/s</color>";
+            SetTextIfChanged(damageText, $"<color=#FFFFFF>{RunProgressStats.FormatNumber(RunProgressStats.TotalDamage)}</color>");
+            SetTextIfChanged(damageTakenText, $"<color=#8B0000>{RunProgressStats.FormatNumber(RunProgressStats.TotalDamageTaken)}</color>");
+            SetTextIfChanged(healingText, $"<color=#90EE90>{RunProgressStats.FormatNumber(RunProgressStats.TotalHealing)}</color>");
+            SetTextIfChanged(maxSpeedText, $"<color=#00FFFF>{RunProgressStats.MaxSpeed:0.0} m/s</color>");
 
             string hitColor = RunProgressStats.BiggestHitCrit ? "FF0000" : "FFFFFF";
-            biggestHitText.text = $"<color=#{hitColor}>{RunProgressStats.FormatNumber(RunProgressStats.BiggestHit)}</color>";
+            SetTextIfChanged(biggestHitText, $"<color=#{hitColor}>{RunProgressStats.FormatNumber(RunProgressStats.BiggestHit)}</color>");
 
-            chestsOpenedText.text = $"<color=#4A90E2>{RunProgressStats.ChestsOpened}</color>";
-            goldCollectedText.text = $"<color=#FFD700>{RunProgressStats.FormatNumber(RunProgressStats.GoldCollected)}</color>";
-            dronesUsedText.text = $"<color=#006400>{RunProgressStats.DronesUsed}</color>";
+            SetTextIfChanged(chestsOpenedText, $"<color=#4A90E2>{RunProgressStats.ChestsOpened}</color>");
+            SetTextIfChanged(goldCollectedText, $"<color=#FFD700>{RunProgressStats.FormatNumber(RunProgressStats.GoldCollected)}</color>");
+            SetTextIfChanged(dronesUsedText, $"<color=#006400>{RunProgressStats.DronesUsed}</color>");
         }
     }
 }

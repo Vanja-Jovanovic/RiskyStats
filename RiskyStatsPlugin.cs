@@ -8,10 +8,10 @@ using System.Collections.Generic;
 
 namespace RiskyStats
 {
-    [BepInPlugin("com.shadowblade.riskystats", "Risky Stats", "1.2.0")]
+    [BepInPlugin("com.shadowblade.riskystats", "Risky Stats", "1.2.1")]
     public class RiskyStatsPlugin : BaseUnityPlugin
     {
-        private const string CurrentConfigVersion = "1.2.0";
+        private const string CurrentConfigVersion = "1.2.1";
 
         private GameObject statsObject;
         private HorizontalOrVerticalLayoutGroup mainLayoutGroup;
@@ -38,7 +38,8 @@ namespace RiskyStats
         private float lastTakenTime;
         private float lastHealingTime;
 
-        // ---------------- Risky Stats+ ----------------
+        private float statsUpdateTimer;
+        private const float StatsUpdateInterval = 0.1f;
 
         private GameObject statsPlusObject;
         private VerticalLayoutGroup plusLayoutGroup;
@@ -54,7 +55,8 @@ namespace RiskyStats
         private int mountainShrinesActivated;
         private int monstersKilled;
 
-        // ------------------------------------------------
+        private float plusStatsUpdateTimer;
+        private const float PlusStatsUpdateInterval = 0.1f;
 
         private void Awake()
         {
@@ -147,11 +149,32 @@ namespace RiskyStats
             if (statsPlusObject == null && hud != null)
                 CreatePlusUI(hud);
 
-            if (statsObject != null && statsObject.activeSelf)
-                UpdateStats();
+            bool wantsStats = statsObject != null && statsObject.activeSelf;
+            bool wantsPlusStats = statsPlusObject != null;
 
-            if (statsPlusObject != null)
-                UpdatePlusStats();
+            CharacterBody localBody = null;
+            if (wantsStats || wantsPlusStats)
+                localBody = LocalUserManager.GetFirstLocalUser()?.cachedBody;
+
+            if (wantsStats)
+            {
+                statsUpdateTimer += Time.deltaTime;
+                if (statsUpdateTimer >= StatsUpdateInterval)
+                {
+                    statsUpdateTimer = 0f;
+                    UpdateStats(localBody);
+                }
+            }
+
+            if (wantsPlusStats)
+            {
+                plusStatsUpdateTimer += Time.deltaTime;
+                if (plusStatsUpdateTimer >= PlusStatsUpdateInterval)
+                {
+                    plusStatsUpdateTimer = 0f;
+                    UpdatePlusStats(localBody);
+                }
+            }
         }
 
         private void CreateUI(HUD hud)
@@ -295,9 +318,14 @@ namespace RiskyStats
             }
         }
 
-        private void UpdateStats()
+        private static void SetTextIfChanged(TextMeshProUGUI text, string value)
         {
-            CharacterBody body = LocalUserManager.GetFirstLocalUser()?.cachedBody;
+            if (text.text != value)
+                text.text = value;
+        }
+
+        private void UpdateStats(CharacterBody body)
+        {
             if (body == null) return;
 
             if (Time.time - lastDamageTime > 5) damageStreak = 0;
@@ -305,31 +333,31 @@ namespace RiskyStats
             if (Time.time - lastHealingTime > 3) healingStreak = 0;
 
             if (statObjects["Armor"].activeSelf)
-                statTexts["Armor"].text = $"Armor: <color=#4A90E2>{body.armor:0}</color>";
+                SetTextIfChanged(statTexts["Armor"], $"Armor: <color=#4A90E2>{body.armor:0}</color>");
 
             if (statObjects["Healing"].activeSelf)
-                statTexts["Healing"].text = $"Healing: <color=#90EE90>{FormatNumber(healingStreak)}</color>";
+                SetTextIfChanged(statTexts["Healing"], $"Healing: <color=#90EE90>{FormatNumber(healingStreak)}</color>");
 
             if (statObjects["Damage"].activeSelf)
-                statTexts["Damage"].text = $"Damage: <color=#{(lastDamageCrit ? "FF0000" : "FFFFFF")}>{FormatNumber(lastDamage)}</color>";
+                SetTextIfChanged(statTexts["Damage"], $"Damage: <color=#{(lastDamageCrit ? "FF0000" : "FFFFFF")}>{FormatNumber(lastDamage)}</color>");
 
             if (statObjects["Streak"].activeSelf)
-                statTexts["Streak"].text = $"Streak: <color=#FFFF00>{FormatNumber(damageStreak)}</color>";
+                SetTextIfChanged(statTexts["Streak"], $"Streak: <color=#FFFF00>{FormatNumber(damageStreak)}</color>");
 
             if (statObjects["DamageTaken"].activeSelf)
-                statTexts["DamageTaken"].text = $"Damage Taken: <color=#FF0000>{FormatNumber(lastDamageTaken)}</color>";
+                SetTextIfChanged(statTexts["DamageTaken"], $"Damage Taken: <color=#FF0000>{FormatNumber(lastDamageTaken)}</color>");
 
             if (statObjects["DamageTakenStreak"].activeSelf)
-                statTexts["DamageTakenStreak"].text = $"Damage Taken Streak: <color=#FF0000>{FormatNumber(damageTakenStreak)}</color>";
+                SetTextIfChanged(statTexts["DamageTakenStreak"], $"Damage Taken Streak: <color=#FF0000>{FormatNumber(damageTakenStreak)}</color>");
 
             if (statObjects["Speed"].activeSelf)
-                statTexts["Speed"].text = $"Speed: <color=#00FFFF>{body.characterMotor.velocity.magnitude:0.0} m/s</color>";
+                SetTextIfChanged(statTexts["Speed"], $"Speed: <color=#00FFFF>{body.characterMotor.velocity.magnitude:0.0} m/s</color>");
 
             if (statObjects["AttackSpeed"].activeSelf)
-                statTexts["AttackSpeed"].text = $"Attack Speed: <color=#90EE90>{body.attackSpeed:0.0}</color>";
+                SetTextIfChanged(statTexts["AttackSpeed"], $"Attack Speed: <color=#90EE90>{body.attackSpeed:0.0}</color>");
 
             if (statObjects["Crit"].activeSelf)
-                statTexts["Crit"].text = $"Crit: <color=#8B0000>{body.crit:0}%</color>";
+                SetTextIfChanged(statTexts["Crit"], $"Crit: <color=#8B0000>{body.crit:0}%</color>");
         }
 
         private void DamageDealt(DamageReport report)
@@ -380,8 +408,6 @@ namespace RiskyStats
             if (key == "DamageTakenStreak") return "Damage Taken Streak";
             return key;
         }
-
-        // ---------------- Risky Stats+ ----------------
 
         private void CreatePlusUI(HUD hud)
         {
@@ -465,31 +491,30 @@ namespace RiskyStats
             }
         }
 
-        private void UpdatePlusStats()
+        private void UpdatePlusStats(CharacterBody body)
         {
-            CharacterBody body = LocalUserManager.GetFirstLocalUser()?.cachedBody;
             if (body == null) return;
 
             if (plusStatObjects["Jumps"].activeSelf)
             {
                 int usedJumps = body.characterMotor != null ? body.characterMotor.jumpCount : 0;
-                plusStatTexts["Jumps"].text = $"Jumps: <color=#90EE90>{body.maxJumpCount}/{usedJumps}</color>";
+                SetTextIfChanged(plusStatTexts["Jumps"], $"Jumps: <color=#90EE90>{body.maxJumpCount}/{usedJumps}</color>");
             }
 
             if (plusStatObjects["MountainShrines"].activeSelf)
-                plusStatTexts["MountainShrines"].text = $"Mountain Shrines: <color=#E0FFFF>{mountainShrinesActivated}</color>";
+                SetTextIfChanged(plusStatTexts["MountainShrines"], $"Mountain Shrines: <color=#E0FFFF>{mountainShrinesActivated}</color>");
 
             if (plusStatObjects["Drones"].activeSelf)
-                plusStatTexts["Drones"].text = $"Drones: <color=#00FF00>{CountAliveDrones(body)}</color>";
+                SetTextIfChanged(plusStatTexts["Drones"], $"Drones: <color=#00FF00>{CountAliveDrones(body)}</color>");
 
             if (plusStatObjects["Luck"].activeSelf)
             {
                 int luck = body.inventory != null ? body.inventory.GetItemCount(RoR2Content.Items.Clover) : 0;
-                plusStatTexts["Luck"].text = $"Luck: <color=#FF69B4>{luck}</color>";
+                SetTextIfChanged(plusStatTexts["Luck"], $"Luck: <color=#FF69B4>{luck}</color>");
             }
 
             if (plusStatObjects["Kills"].activeSelf)
-                plusStatTexts["Kills"].text = $"Kills: <color=#8B0000>{monstersKilled}</color>";
+                SetTextIfChanged(plusStatTexts["Kills"], $"Kills: <color=#8B0000>{monstersKilled}</color>");
         }
 
         private int CountAliveDrones(CharacterBody player)
