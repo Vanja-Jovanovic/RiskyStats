@@ -33,12 +33,15 @@ namespace RiskyStats
         public static float MaxSpeed;
         public static float BiggestHit;
         public static bool BiggestHitCrit;
+        public static float TotalDistance;
 
         public static int ChestsOpened;
         public static float GoldCollected;
         public static int DronesUsed;
 
         private static bool hooked;
+        private static Vector3 lastPosition;
+        private static bool hasLastPosition;
 
         public static void Init()
         {
@@ -67,6 +70,8 @@ namespace RiskyStats
             MaxSpeed = 0f;
             BiggestHit = 0f;
             BiggestHitCrit = false;
+            TotalDistance = 0f;
+            hasLastPosition = false;
 
             ChestsOpened = 0;
             GoldCollected = 0f;
@@ -162,6 +167,27 @@ namespace RiskyStats
                 MaxSpeed = speed;
         }
 
+        public static void TrackDistance(CharacterBody body)
+        {
+            if (body == null)
+            {
+                hasLastPosition = false;
+                return;
+            }
+
+            Vector3 currentPosition = body.transform.position;
+
+            if (hasLastPosition)
+            {
+                float delta = Vector3.Distance(lastPosition, currentPosition);
+                if (delta < 50f)
+                    TotalDistance += delta;
+            }
+
+            lastPosition = currentPosition;
+            hasLastPosition = true;
+        }
+
         public static string FormatNumber(float number)
         {
             if (number >= 1e12f) return (number / 1e12f).ToString("0.0") + "t";
@@ -169,6 +195,13 @@ namespace RiskyStats
             if (number >= 1e6f) return (number / 1e6f).ToString("0.0") + "m";
             if (number >= 1e3f) return (number / 1e3f).ToString("0.0") + "k";
             return number.ToString("0");
+        }
+
+        public static string FormatDistance(float meters)
+        {
+            if (meters >= 1000f)
+                return (meters / 1000f).ToString("0.00") + " km";
+            return meters.ToString("0") + " m";
         }
     }
 
@@ -185,6 +218,7 @@ namespace RiskyStats
         private TextMeshProUGUI chestsOpenedText;
         private TextMeshProUGUI goldCollectedText;
         private TextMeshProUGUI dronesUsedText;
+        private TextMeshProUGUI distanceRanText;
 
         private static readonly Color BackgroundColor = new Color(0.05f, 0.07f, 0.18f, 0.97f);
         private static readonly Color BorderColor = new Color(1f, 0.82f, 0.2f, 1f);
@@ -223,7 +257,10 @@ namespace RiskyStats
             if (held != panelObject.activeSelf)
                 panelObject.SetActive(held);
 
-            CharacterBody body = held ? LocalUserManager.GetFirstLocalUser()?.cachedBody : null;
+            CharacterBody localBody = LocalUserManager.GetFirstLocalUser()?.cachedBody;
+            RunProgressStats.TrackDistance(localBody);
+
+            CharacterBody body = held ? localBody : null;
 
             if (held)
                 RunProgressStats.TrackSpeed(body);
@@ -282,6 +319,7 @@ namespace RiskyStats
             chestsOpenedText = CreateStatRow(panelObject.transform, "Chests Opened", true);
             goldCollectedText = CreateStatRow(panelObject.transform, "Gold Collected", false);
             dronesUsedText = CreateStatRow(panelObject.transform, "Drones Used", true);
+            distanceRanText = CreateStatRow(panelObject.transform, "Distance Ran", false);
 
             panelObject.SetActive(false);
         }
@@ -389,6 +427,7 @@ namespace RiskyStats
             SetTextIfChanged(chestsOpenedText, $"<color=#4A90E2>{RunProgressStats.ChestsOpened}</color>");
             SetTextIfChanged(goldCollectedText, $"<color=#FFD700>{RunProgressStats.FormatNumber(RunProgressStats.GoldCollected)}</color>");
             SetTextIfChanged(dronesUsedText, $"<color=#006400>{RunProgressStats.DronesUsed}</color>");
+            SetTextIfChanged(distanceRanText, $"<color=#00FFFF>{RunProgressStats.FormatDistance(RunProgressStats.TotalDistance)}</color>");
         }
     }
 }

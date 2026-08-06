@@ -8,10 +8,10 @@ using System.Collections.Generic;
 
 namespace RiskyStats
 {
-    [BepInPlugin("com.shadowblade.riskystats", "Risky Stats", "1.2.1")]
+    [BepInPlugin("com.shadowblade.riskystats", "Risky Stats", "1.2.2")]
     public class RiskyStatsPlugin : BaseUnityPlugin
     {
-        private const string CurrentConfigVersion = "1.2.1";
+        private const string CurrentConfigVersion = "1.2.2";
 
         private GameObject statsObject;
         private HorizontalOrVerticalLayoutGroup mainLayoutGroup;

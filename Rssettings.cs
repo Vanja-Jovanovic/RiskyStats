@@ -47,6 +47,7 @@ namespace RiskyStats
         private static ConfigEntry<StatTextAlign> textAlignEntry;
         public static bool PanelVisible = true;
         public static KeyCode ToggleKey = KeyCode.V;
+        public static bool ShowThankYouMessage = true;
 
         private static ConfigFile config;
         private static Dictionary<string, ConfigEntry<bool>> visibilityEntries = new Dictionary<string, ConfigEntry<bool>>();
@@ -54,6 +55,7 @@ namespace RiskyStats
         private static ConfigEntry<float> spacingEntry;
         private static ConfigEntry<StatAlignment> alignmentEntry;
         private static ConfigEntry<KeyCode> toggleKeyEntry;
+        private static ConfigEntry<bool> showThankYouMessageEntry;
 
         public static void Init(ConfigFile cfg)
         {
@@ -77,12 +79,14 @@ namespace RiskyStats
             alignmentEntry = config.Bind("Appearance", "Alignment", StatAlignment.Horizontal, "Horizontal or vertical layout");
             textAlignEntry = config.Bind("Appearance", "Text Alignment", StatTextAlign.Center, "Text alignment when using vertical layout");
             toggleKeyEntry = config.Bind("General", "Toggle Key", KeyCode.V, "Key used to show/hide the stats panel");
+            showThankYouMessageEntry = config.Bind("General", "Show Thank You Message", true, "Whether to show the developer message in the settings panel");
 
             StatFontSize = fontSizeEntry.Value;
             StatSpacing = spacingEntry.Value;
             Alignment = alignmentEntry.Value;
             TextAlign = textAlignEntry.Value;
             ToggleKey = toggleKeyEntry.Value;
+            ShowThankYouMessage = showThankYouMessageEntry.Value;
         }
 
         public static void SetVisibility(string key, bool value)
@@ -139,6 +143,14 @@ namespace RiskyStats
         {
             PanelVisible = !PanelVisible;
             OnSettingsChanged?.Invoke();
+        }
+
+        public static void DismissThankYouMessage()
+        {
+            ShowThankYouMessage = false;
+
+            if (showThankYouMessageEntry != null)
+                showThankYouMessageEntry.Value = false;
         }
 
         public static void ResetToDefault()
@@ -278,6 +290,7 @@ namespace RiskyStats
         private static GameObject plusPanelObject;
         private static GameObject navButtonObject;
         private static GameObject backdropObject;
+        private static GameObject thankYouMessageObject;
         private static Transform rootCanvasTransform;
 
         private static readonly Color BackgroundColor = new Color(0.05f, 0.07f, 0.18f, 0.97f);
@@ -288,6 +301,9 @@ namespace RiskyStats
         private static readonly Color OffColor = new Color(0.3f, 0.3f, 0.35f, 1f);
         private static readonly Color DarkTextColor = new Color(0.05f, 0.07f, 0.18f, 1f);
         private static readonly Color SubTextColor = new Color(0.65f, 0.68f, 0.8f, 1f);
+        private static readonly Color ThankYouBackgroundColor = new Color(0f, 0.1019f, 0.5098f, 0.97f);
+        private static readonly Color ThankYouOutlineColor = new Color(0.53f, 0.81f, 1f, 1f);
+        private static readonly Color ThankYouDismissColor = new Color(0.8f, 0.15f, 0.15f, 1f);
 
         private const float PanelWidth = 560f;
         private const float RowHeight = 32f;
@@ -447,6 +463,7 @@ namespace RiskyStats
                 if (navButtonObject != null)
                     navButtonObject.SetActive(true);
                 UpdateNavButtonLabel();
+                SyncThankYouMessageVisibility();
             }
             else
             {
@@ -457,6 +474,7 @@ namespace RiskyStats
                     plusPanelObject.SetActive(false);
                 if (navButtonObject != null)
                     navButtonObject.SetActive(false);
+                SyncThankYouMessageVisibility();
             }
         }
 
@@ -527,6 +545,7 @@ namespace RiskyStats
             plusPanelObject.SetActive(goingToPlus);
 
             UpdateNavButtonLabel();
+            SyncThankYouMessageVisibility();
         }
 
         private static void UpdateNavButtonLabel()
@@ -538,6 +557,12 @@ namespace RiskyStats
 
             bool onPlusPanel = plusPanelObject != null && plusPanelObject.activeSelf;
             label.text = onPlusPanel ? "Back" : "Next";
+        }
+
+        private static void SyncThankYouMessageVisibility()
+        {
+            if (thankYouMessageObject != null)
+                thankYouMessageObject.SetActive(panelObject != null && panelObject.activeSelf);
         }
 
         private static void BuildPanel(Transform parent)
@@ -595,6 +620,100 @@ namespace RiskyStats
                 CreateTextAlignRow(panelObject.transform);
 
             CreateBottomButtonsRow(panelObject.transform);
+
+            if (RSSettings.ShowThankYouMessage)
+                BuildThankYouMessage(parent);
+        }
+
+        private static void BuildThankYouMessage(Transform parent)
+        {
+            thankYouMessageObject = new GameObject("RiskyStatsThankYouMessage");
+            thankYouMessageObject.transform.SetParent(parent, false);
+
+            RectTransform rect = thankYouMessageObject.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0f, 0.5f);
+            rect.anchorMax = new Vector2(0f, 0.5f);
+            rect.pivot = new Vector2(0f, 0.5f);
+            rect.anchoredPosition = new Vector2(60f, 0f);
+            rect.sizeDelta = new Vector2(380f, 10f);
+
+            Image bg = thankYouMessageObject.AddComponent<Image>();
+            bg.color = ThankYouBackgroundColor;
+
+            Outline outline = thankYouMessageObject.AddComponent<Outline>();
+            outline.effectColor = ThankYouOutlineColor;
+            outline.effectDistance = new Vector2(2, -2);
+
+            VerticalLayoutGroup layout = thankYouMessageObject.AddComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(16, 16, 16, 16);
+            layout.spacing = 10;
+            layout.childAlignment = TextAnchor.UpperLeft;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+
+            ContentSizeFitter fitter = thankYouMessageObject.AddComponent<ContentSizeFitter>();
+            fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            GameObject textObj = new GameObject("MessageText");
+            textObj.transform.SetParent(thankYouMessageObject.transform, false);
+
+            TextMeshProUGUI text = textObj.AddComponent<TextMeshProUGUI>();
+            text.text = "Dear User,\n\nThis mod was originally a random personal project made just for fun. When I decided to publish it, I never expected it to reach more than a few downloads, let alone 1,000+ downloads.\nI am honored that you took the time to download and use this passion project. Thank you for being part of the journey.\n\n- A Software Engineer";
+            text.fontSize = 15;
+            text.color = Color.white;
+            text.alignment = TextAlignmentOptions.TopLeft;
+            text.enableWordWrapping = true;
+
+            LayoutElement textLayoutElement = textObj.AddComponent<LayoutElement>();
+            textLayoutElement.preferredWidth = 348;
+            textLayoutElement.flexibleWidth = 0;
+
+            GameObject dismissObj = new GameObject("DismissButton");
+            dismissObj.transform.SetParent(thankYouMessageObject.transform, false);
+
+            LayoutElement dismissLayoutElement = dismissObj.AddComponent<LayoutElement>();
+            dismissLayoutElement.preferredHeight = 30;
+            dismissLayoutElement.minHeight = 30;
+            dismissLayoutElement.preferredWidth = 100;
+            dismissLayoutElement.minWidth = 100;
+            dismissLayoutElement.flexibleWidth = 0;
+
+            Image dismissBg = dismissObj.AddComponent<Image>();
+            dismissBg.color = ThankYouDismissColor;
+
+            Button dismissButton = dismissObj.AddComponent<Button>();
+            dismissButton.targetGraphic = dismissBg;
+
+            GameObject dismissLabelObj = new GameObject("Label");
+            dismissLabelObj.transform.SetParent(dismissObj.transform, false);
+            RectTransform dismissLabelRect = dismissLabelObj.AddComponent<RectTransform>();
+            dismissLabelRect.anchorMin = Vector2.zero;
+            dismissLabelRect.anchorMax = Vector2.one;
+            dismissLabelRect.offsetMin = Vector2.zero;
+            dismissLabelRect.offsetMax = Vector2.zero;
+
+            TextMeshProUGUI dismissLabel = dismissLabelObj.AddComponent<TextMeshProUGUI>();
+            dismissLabel.text = "Dismiss";
+            dismissLabel.alignment = TextAlignmentOptions.Center;
+            dismissLabel.color = Color.white;
+            dismissLabel.fontStyle = FontStyles.Bold;
+            dismissLabel.fontSize = 15;
+
+            dismissButton.onClick.AddListener(() =>
+            {
+                RSSettings.DismissThankYouMessage();
+
+                if (thankYouMessageObject != null)
+                {
+                    DestroyImmediate(thankYouMessageObject);
+                    thankYouMessageObject = null;
+                }
+
+                EventSystem.current.SetSelectedGameObject(null);
+            });
         }
 
         private static void BuildPlusPanel(Transform parent)
@@ -924,9 +1043,17 @@ namespace RiskyStats
 
                 RSSettings.SetAlignment(newAlignment);
 
+                if (thankYouMessageObject != null)
+                {
+                    DestroyImmediate(thankYouMessageObject);
+                    thankYouMessageObject = null;
+                }
+
                 Transform panelParent = panelObject.transform.parent;
                 DestroyImmediate(panelObject);
                 BuildPanel(panelParent);
+
+                SyncThankYouMessageVisibility();
             });
         }
 
@@ -1032,6 +1159,12 @@ namespace RiskyStats
             {
                 RSSettings.ResetToDefault();
 
+                if (thankYouMessageObject != null)
+                {
+                    DestroyImmediate(thankYouMessageObject);
+                    thankYouMessageObject = null;
+                }
+
                 Transform panelParent = panelObject.transform.parent;
                 DestroyImmediate(panelObject);
                 BuildPanel(panelParent);
@@ -1043,6 +1176,7 @@ namespace RiskyStats
                 }
 
                 UpdateNavButtonLabel();
+                SyncThankYouMessageVisibility();
             });
 
             CreateBottomButton(wrapper.transform, "Close", AccentColor, DarkTextColor, () =>
@@ -1052,6 +1186,7 @@ namespace RiskyStats
                     navButtonObject.SetActive(false);
                 if (backdropObject != null)
                     backdropObject.SetActive(false);
+                SyncThankYouMessageVisibility();
             });
         }
 
@@ -1077,6 +1212,12 @@ namespace RiskyStats
             {
                 RSSettings.ResetToDefault();
 
+                if (thankYouMessageObject != null)
+                {
+                    DestroyImmediate(thankYouMessageObject);
+                    thankYouMessageObject = null;
+                }
+
                 Transform panelParent = panelObject.transform.parent;
                 DestroyImmediate(panelObject);
                 BuildPanel(panelParent);
@@ -1085,6 +1226,7 @@ namespace RiskyStats
                 plusPanelObject = null;
 
                 UpdateNavButtonLabel();
+                SyncThankYouMessageVisibility();
             });
 
             CreateBottomButton(wrapper.transform, "Close", AccentColor, DarkTextColor, () =>
@@ -1094,6 +1236,7 @@ namespace RiskyStats
                     navButtonObject.SetActive(false);
                 if (backdropObject != null)
                     backdropObject.SetActive(false);
+                SyncThankYouMessageVisibility();
             });
         }
 
